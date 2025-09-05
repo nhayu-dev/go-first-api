@@ -1,0 +1,34 @@
+### Hello API (GET)
+GET http://localhost:3000/hello
+
+### POSTでメッセージを送る
+POST http://localhost:3000/post
+Content-Type: application/json
+
+{
+  "text": "Hello from REST Client"
+}
+###Get all messages
+GET http://localhost:3000/get
+
+POST http://localhost:3000/get/
+Content-Type: application/json
+
+{
+  "text":"Hello from REST Client"
+
+}
+###update 
+
+PUT http://localhost:3000/get/1
+Content-Type: application/json
+
+{
+  "text":"updated!"
+}
+
+{
+  "id":1,
+  "text":"updated!"
+
+}
