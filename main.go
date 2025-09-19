@@ -1,9 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+
+	_ "modernc.org/sqlite"
 )
 
 type message struct {
@@ -11,8 +15,7 @@ type message struct {
 	ID   int    `json:"id"`
 }
 
-var nextID = 1
-var messages []message
+var db *sql.DB
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -21,51 +24,75 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
 	var msg message
-
-	err := json.NewDecoder(r.Body).Decode(&msg)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	msg.ID = nextID
-	nextID++
+	res, err := db.Exec("INSERT INTO messages (text) VALUES(?)", msg.Text)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	messages = append(messages, msg)
+	id, _ := res.LastInsertId()
+	msg.ID = int(id)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(msg)
 
 }
 
-func getHandler(w http.ResponseWriter, r *http.Request) {
+func getHandler(w http.ResponseWriter, _ *http.Request) {
+	rows, err := db.Query("SELECT id, text FROM messages")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var msgs []message
+	for rows.Next() {
+		var m message
+		if err := rows.Scan(&m.ID, &m.Text); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		msgs = append(msgs, m)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messages)
+	json.NewEncoder(w).Encode(msgs)
 }
 
 func getByIDHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-type", "apploction/json")
 
-	idStr := r.URL.Path[len("/get/"):]
-	var id int
-	fmt.Sscanf(idStr, "%d", &id)
-
-	for _, m := range messages {
-		if m.ID == id {
-			json.NewEncoder(w).Encode(m)
-			return
-		}
+	idStr := r.URL.Path[len("/messages/"):]
+	var m message
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
 	}
 
-	http.Error(w, "notfound", http.StatusNotFound)
+	err = db.QueryRow("SELECT id, text FROM messages WHERE id = ?", id).Scan(&m.ID, &m.Text)
+	if err == sql.ErrNoRows {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-type", "appliction/json")
+	json.NewEncoder(w).Encode(m)
 }
 
 func updateHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	idStr := r.URL.Path[len("/get/"):]
-	var id int
-	fmt.Sscanf(idStr, "%d", &id)
+	idStr := r.URL.Path[len("/messages/"):]
 
 	var newMsg message
 
@@ -75,28 +102,96 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for i, m := range messages {
-		if m.ID == id {
-			messages[i].Text = newMsg.Text
-			json.NewEncoder(w).Encode(messages[i])
-			return
-		}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
 	}
-	http.Error(w, "not found", http.StatusNotFound)
+
+	_, err = db.Exec("UPDATE messages SET text = ? WHERE id =?", newMsg.Text, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	newMsg.ID = id
+
+	json.NewEncoder(w).Encode(newMsg)
 
 }
 
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id, err := strconv.Atoi(r.URL.Path[len("/messages/"):])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec("DELETE FROM messages WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	count, _ := res.RowsAffected()
+	if count == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": fmt.Sprintf("delite id %d", id),
+	})
+
+}
+
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite", "./messages.db")
+	if err != nil {
+		panic(err)
+	}
+
+	createTable := `
+		CREATE TABLE IF NOT EXISTS messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		text TEXT NOT NULL
+		);
+		`
+
+	_, err = db.Exec(createTable)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func main() {
+	initDB()
+	defer db.Close()
+
 	http.HandleFunc("/hello", helloHandler)
-	http.HandleFunc("/post", postHandler)
-	http.HandleFunc("/get", getHandler)
-	http.HandleFunc("/get/", getByIDHandler)
-	http.HandleFunc("/get/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
+
 		case http.MethodGet:
-			getByIDHandler(w, r)
+			getHandler(w, r) //全件取得
+		case http.MethodPost:
+			postHandler(w, r) //新規作成
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	http.HandleFunc("/messages/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+
+		case http.MethodGet:
+			getByIDHandler(w, r) //一件取得
 		case http.MethodPut:
-			updateHandler(w, r)
+			updateHandler(w, r) //更新
+		case http.MethodDelete:
+			deleteHandler(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 
@@ -106,6 +201,6 @@ func main() {
 	fmt.Println("Server running at http://localhost:3000")
 	err := http.ListenAndServe(":3000", nil)
 	if err != nil {
-		fmt.Println("Eroor:", err)
+		fmt.Println("Error:", err)
 	}
 }

@@ -2,33 +2,39 @@
 GET http://localhost:3000/hello
 
 ### POSTでメッセージを送る
-POST http://localhost:3000/post
+POST http://localhost:3000/messages
 Content-Type: application/json
 
 {
   "text": "Hello from REST Client"
 }
 ###Get all messages
-GET http://localhost:3000/get
+GET http://localhost:3000/messages
 
-POST http://localhost:3000/get/
+
+###create post
+POST http://localhost:3000/messages
 Content-Type: application/json
 
 {
   "text":"Hello from REST Client"
 
 }
-###update 
+###update post
 
-PUT http://localhost:3000/get/1
+PUT http://localhost:3000/messages/1
 Content-Type: application/json
 
 {
   "text":"updated!"
 }
 
-{
-  "id":1,
-  "text":"updated!"
+###Delete post
 
+
+DELETE http://localhost:3000/messages/1
+Content-Type: application/json
+
+{
+  "text":"deleted"
 }
