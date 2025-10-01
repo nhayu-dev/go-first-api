@@ -29,6 +29,11 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg.Text == "" {
+		http.Error(w, "text cannot be empty", http.StatusBadRequest)
+		return
+	}
+
 	res, err := db.Exec("INSERT INTO messages (text) VALUES(?)", msg.Text)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -85,7 +90,7 @@ func getByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-type", "appliction/json")
+	w.Header().Set("Content-Type", "appliction/json")
 	json.NewEncoder(w).Encode(m)
 }
 
@@ -141,7 +146,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": fmt.Sprintf("delite id %d", id),
+		"message": fmt.Sprintf("delited id %d", id),
 	})
 
 }
@@ -169,6 +174,19 @@ func initDB() {
 func main() {
 	initDB()
 	defer db.Close()
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		w.Header().Set("Acesss-Control-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.DefaultServeMux.ServeHTTP(w, r)
+
+	})
 
 	http.HandleFunc("/hello", helloHandler)
 	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
