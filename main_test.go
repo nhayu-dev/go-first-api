@@ -39,7 +39,7 @@ func TestPostMessage_Success(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	postHandler(w, req)
+	postHandler(db, w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", w.Code)
@@ -48,7 +48,7 @@ func TestPostMessage_Success(t *testing.T) {
 }
 
 func TestPostMessage_Fail_EmptyText(t *testing.T) {
-	initTestDB(t)
+	db := initTestDB(t)
 	defer db.Close()
 
 	body := bytes.NewBufferString(`{"text":""}`)
@@ -56,7 +56,7 @@ func TestPostMessage_Fail_EmptyText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
-	postHandler(w, req)
+	postHandler(db, w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 BadReqest, got %d", w.Code)

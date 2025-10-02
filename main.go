@@ -15,14 +15,12 @@ type message struct {
 	ID   int    `json:"id"`
 }
 
-var db *sql.DB
-
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(message{Text: "Hello, JSON API!"})
 }
 
-func postHandler(w http.ResponseWriter, r *http.Request) {
+func postHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	var msg message
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -48,7 +46,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func getHandler(w http.ResponseWriter, _ *http.Request) {
+func getHandler(db *sql.DB, w http.ResponseWriter, _ *http.Request) {
 	rows, err := db.Query("SELECT id, text FROM messages")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -71,7 +69,7 @@ func getHandler(w http.ResponseWriter, _ *http.Request) {
 	json.NewEncoder(w).Encode(msgs)
 }
 
-func getByIDHandler(w http.ResponseWriter, r *http.Request) {
+func getByIDHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 
 	idStr := r.URL.Path[len("/messages/"):]
 	var m message
@@ -90,11 +88,11 @@ func getByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "appliction/json")
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(m)
 }
 
-func updateHandler(w http.ResponseWriter, r *http.Request) {
+func updateHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	idStr := r.URL.Path[len("/messages/"):]
@@ -125,7 +123,7 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
+func deleteHandler(db *sql.DB, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	id, err := strconv.Atoi(r.URL.Path[len("/messages/"):])
@@ -146,14 +144,14 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": fmt.Sprintf("delited id %d", id),
+		"message": fmt.Sprintf("deleted id %d", id),
 	})
 
 }
 
-func initDB() {
-	var err error
-	db, err = sql.Open("sqlite", "./messages.db")
+func initDB() *sql.DB {
+
+	db, err := sql.Open("sqlite", "./messages.db")
 	if err != nil {
 		panic(err)
 	}
@@ -169,33 +167,35 @@ func initDB() {
 	if err != nil {
 		panic(err)
 	}
+	return db
 }
 
-func main() {
-	initDB()
-	defer db.Close()
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-origin", "*")
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		w.Header().Set("Acesss-Control-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		http.DefaultServeMux.ServeHTTP(w, r)
-
+		next.ServeHTTP(w, r)
 	})
+}
+func main() {
+
+	db := initDB()
+	defer db.Close()
 
 	http.HandleFunc("/hello", helloHandler)
 	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 
 		case http.MethodGet:
-			getHandler(w, r) //全件取得
+			getHandler(db, w, r) //全件取得
 		case http.MethodPost:
-			postHandler(w, r) //新規作成
+			postHandler(db, w, r) //新規作成
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -205,11 +205,11 @@ func main() {
 		switch r.Method {
 
 		case http.MethodGet:
-			getByIDHandler(w, r) //一件取得
+			getByIDHandler(db, w, r) //一件取得
 		case http.MethodPut:
-			updateHandler(w, r) //更新
+			updateHandler(db, w, r) //更新
 		case http.MethodDelete:
-			deleteHandler(w, r)
+			deleteHandler(db, w, r) //削除
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 
@@ -217,7 +217,7 @@ func main() {
 	})
 
 	fmt.Println("Server running at http://localhost:3000")
-	err := http.ListenAndServe(":3000", nil)
+	err := http.ListenAndServe(":3000", withCORS(http.DefaultServeMux))
 	if err != nil {
 		fmt.Println("Error:", err)
 	}
